@@ -41,6 +41,8 @@ Licensing info for the default sound banks can be found over on the [dough-sampl
 
 There are many ways to contribute to this project! See [contribution guide](./CONTRIBUTING.md). You can find the full list of contributors [here](https://codeberg.org/uzu/strudel/activity/contributors).
 
+Please see [POLICY.md](POLICY.md) for our code of conduct and humane AI/LLM policy.
+
 ## Community
 
 Strudel is a member of the 'Uzu' family of pattern-based live coding languages, along with TidalCycles and friends.

@@ -11,17 +11,37 @@ let TAURI;
 if (typeof window !== 'undefined') {
   TAURI = window?.__TAURI__;
 }
-export const { BaseDirectory, readDir, readBinaryFile, writeTextFile, readTextFile, exists } = TAURI?.fs || {};
-
-export const dir = BaseDirectory?.Audio; // https://tauri.app/v1/api/js/path#audiodir
+// Tauri v2 fs plugin (exposed on window.__TAURI__.fs via withGlobalTauri)
+const fs = TAURI?.fs || {};
+export const BaseDirectory = fs.BaseDirectory;
+export const dir = BaseDirectory?.Audio; // https://v2.tauri.app/reference/javascript/api/namespacepath/#audiodir
+const fsOptions = { baseDir: dir };
 const prefix = '~/music/';
 
+const readTextFile = (path) => fs.readTextFile(path, fsOptions);
+const writeTextFile = (path, contents) => fs.writeTextFile(path, contents, fsOptions);
+
+// v2 readDir is flat and returns { name, isDirectory, isFile }.
+// This keeps the v1 tree shape ({ name, children? }) the rest of the app expects.
+export async function readDir(path = '', { recursive = false } = {}) {
+  const entries = await fs.readDir(path, fsOptions);
+  return Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.isDirectory) {
+        return { name: entry.name };
+      }
+      const subpath = path ? `${path}/${entry.name}` : entry.name;
+      return { name: entry.name, children: recursive ? await readDir(subpath, { recursive }) : [] };
+    }),
+  );
+}
+
 async function hasStrudelJson(subpath) {
-  return exists(subpath + '/strudel.json', { dir });
+  return fs.exists(subpath + '/strudel.json', fsOptions);
 }
 
 async function loadStrudelJson(subpath) {
-  const contents = await readTextFile(subpath + '/strudel.json', { dir });
+  const contents = await readTextFile(subpath + '/strudel.json');
   const sampleMap = JSON.parse(contents);
   processSampleMap(sampleMap, (key, bank) => {
     registerSound(key, (t, hapValue, onended) => onTriggerSample(t, hapValue, onended, bank, fileResolver(subpath)), {
@@ -34,7 +54,7 @@ async function loadStrudelJson(subpath) {
 }
 
 async function writeStrudelJson(subpath) {
-  const children = await readDir(subpath, { dir, recursive: true });
+  const children = await readDir(subpath, { recursive: true });
   const name = subpath.split('/').slice(-1)[0];
   const tree = { name, children };
 
@@ -49,7 +69,7 @@ async function writeStrudelJson(subpath) {
   });
   const json = JSON.stringify(samples, null, 2);
   const filepath = subpath + '/strudel.json';
-  await writeTextFile(filepath, json, { dir });
+  await writeTextFile(filepath, json);
   console.log(`wrote strudel.json with ${count} samples to ${subpath}!`);
 }
 
@@ -90,7 +110,7 @@ export async function resolveFileURL(url) {
     return loadCache[url];
   }
   loadCache[url] = (async () => {
-    const contents = await readBinaryFile(url, { dir });
+    const contents = await fs.readFile(url, fsOptions);
     return uint8ArrayToDataURL(contents);
   })();
   return loadCache[url];

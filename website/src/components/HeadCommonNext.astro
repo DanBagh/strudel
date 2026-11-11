@@ -23,8 +23,8 @@ const baseNoTrailing = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL
 
 <base href={BASE_URL} />
 
-<!-- Scrollable a11y code helper -->
-<script src{`${baseNoTrailing}/make-scrollable-code-focusable.js`} is:inline></script>
+<!-- Scrollable accessibility code helper -->
+<script src={`${baseNoTrailing}/make-scrollable-code-focusable.js`} is:inline></script>
 
 <script src="/src/pwa.ts"></script>
 <!-- this does not work for some reason: -->
@@ -32,6 +32,7 @@ const baseNoTrailing = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL
 <!-- the following variables are just a fallback to make sure everything is readable without JS -->
 <style is:global>
   :root {
+    color-scheme: dark;
     --background: #222;
     --lineBackground: #22222299;
     --foreground: #fff;

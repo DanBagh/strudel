@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { releaseAudioNode } from './helpers.mjs';
+
 var reverbGen = {};
 
 /** Generates a reverb impulse response.
 
+ @tags internals
  @param {!Object} params TODO: Document the properties.
  @param {!function(!AudioBuffer)} callback Function to call when
   the impulse response has been generated. The impulse response
@@ -48,7 +51,7 @@ reverbGen.generateReverb = function (params, callback) {
 
 /** Creates a canvas element showing a graph of the given data.
 
-
+ @tags internals
  @param {!Float32Array} data An array of numbers, or a Float32Array.
  @param {number} width Width in pixels of the canvas.
  @param {number} height Height in pixels of the canvas.
@@ -79,7 +82,9 @@ reverbGen.generateGraph = function (data, width, height, min, max) {
  @param {number} lpFreqEnd
  @param {number} lpFreqEndAt
  @param {!function(!AudioBuffer)} callback May be called
-  immediately within the current execution context, or later.*/
+  immediately within the current execution context, or later.
+ @tags internals
+  */
 var applyGradualLowpass = function (input, lpFreqStart, lpFreqEnd, lpFreqEndAt, callback) {
   if (lpFreqStart == 0) {
     callback(input);
@@ -104,8 +109,8 @@ var applyGradualLowpass = function (input, lpFreqStart, lpFreqEnd, lpFreqEndAt, 
   player.start();
   context.oncomplete = function (event) {
     callback(event.renderedBuffer);
-    filter.disconnect();
-    player.disconnect();
+    releaseAudioNode(filter);
+    releaseAudioNode(player);
   };
   context.startRendering();
 

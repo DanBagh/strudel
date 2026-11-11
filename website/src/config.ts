@@ -76,6 +76,7 @@ export const SIDEBAR: Sidebar = {
       { text: 'MIDI & OSC', link: 'learn/input-output' },
     ],
     More: [
+      { text: 'FAQ', link: 'learn/faq' },
       { text: 'Recipes', link: 'recipes/recipes' },
       { text: 'Mini-Notation', link: 'learn/mini-notation' },
       { text: 'Visual Feedback', link: 'learn/visual-feedback' },
@@ -97,13 +98,14 @@ export const SIDEBAR: Sidebar = {
       { text: 'Random Modifiers', link: 'learn/random-modifiers' },
       { text: 'Conditional Modifiers', link: 'learn/conditional-modifiers' },
       { text: 'Accumulation', link: 'learn/accumulation' },
+      { text: 'LFOs', link: 'learn/lfo' },
       { text: 'Tonal Functions', link: 'learn/tonal' },
       { text: 'Stepwise Functions', link: 'learn/stepwise' },
     ],
     Understand: [
       { text: 'Coding syntax', link: 'learn/code' },
       { text: 'Pitch', link: 'understand/pitch' },
-      { text: 'Xen Harmonic Functions', link: 'learn/xen' },
+      { text: 'Xenharmonic Functions', link: 'learn/xen' },
       { text: 'Cycles', link: 'understand/cycles' },
       { text: 'Voicings', link: 'understand/voicings' },
       { text: 'Pattern Alignment', link: 'technical-manual/alignment' },

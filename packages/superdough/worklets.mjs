@@ -5,6 +5,9 @@
 import OLAProcessor from './ola-processor';
 import FFT from './fft.js';
 import { getDistortionAlgorithm } from './helpers.mjs';
+import * as ugens from '@kabelsalat/lib/src/ugens.js';
+
+const UGENS = new Map(Object.entries(ugens));
 
 const blockSize = 128;
 const PI = Math.PI;
@@ -124,8 +127,8 @@ class LFOProcessor extends AudioWorkletProcessor {
       { name: 'shape', defaultValue: 0 },
       { name: 'curve', defaultValue: 1 },
       { name: 'dcoffset', defaultValue: 0 },
-      { name: 'min', defaultValue: 0 },
-      { name: 'max', defaultValue: 1 },
+      { name: 'min', defaultValue: -1e9 },
+      { name: 'max', defaultValue: 1e9 },
     ];
   }
 
@@ -143,7 +146,8 @@ class LFOProcessor extends AudioWorkletProcessor {
 
   process(_inputs, outputs, parameters) {
     const begin = parameters['begin'][0];
-    if (currentTime >= parameters.end[0]) {
+    const end = parameters['end'][0];
+    if (currentTime >= end) {
       return false;
     }
     if (currentTime <= begin) {
@@ -161,6 +165,7 @@ class LFOProcessor extends AudioWorkletProcessor {
     const curve = parameters['curve'][0];
 
     const dcoffset = parameters['dcoffset'][0];
+
     const min = parameters['min'][0];
     const max = parameters['max'][0];
     const shape = waveShapeNames[parameters['shape'][0]];
@@ -209,7 +214,7 @@ class CoarseProcessor extends AudioWorkletProcessor {
     coarse = Math.max(1, coarse);
     for (let n = 0; n < blockSize; n++) {
       for (let i = 0; i < input.length; i++) {
-        output[i][n] = n % coarse === 0 ? input[i][n] : output[i][n - 1];
+        output[i][n] = n % coarse < 1 ? input[i][n] : output[i][n - 1];
       }
     }
     return true;
@@ -461,22 +466,31 @@ registerProcessor('distort-processor', DistortProcessor);
 class SuperSawOscillatorProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
+    this.port.onmessage = (e) => {
+      const { type, payload } = e.data || {};
+      if (type === 'initialize') {
+        this.initialize(payload);
+      }
+    };
+    this.initialize();
+  }
+  initialize(_options) {
     this.phase = [];
   }
   static get parameterDescriptors() {
     return [
       {
         name: 'begin',
-        defaultValue: 0,
+        defaultValue: -1,
         max: Number.POSITIVE_INFINITY,
-        min: 0,
+        min: -1,
       },
 
       {
         name: 'end',
-        defaultValue: 0,
+        defaultValue: -1,
         max: Number.POSITIVE_INFINITY,
-        min: 0,
+        min: -1,
       },
 
       {
@@ -511,12 +525,17 @@ class SuperSawOscillatorProcessor extends AudioWorkletProcessor {
     ];
   }
   process(_input, outputs, params) {
-    if (currentTime >= params.end[0]) {
-      // should terminate
+    const begin = params.begin[0];
+    const end = params.end[0];
+    const beginDefined = begin >= 0;
+    const endDefined = end >= 0;
+    // We give a 0.5s grace period (for node pooling) before termination
+    const shouldTerminate = endDefined && currentTime >= end + 0.5;
+    const ended = endDefined && currentTime >= end;
+    const notStarted = currentTime <= begin;
+    if (shouldTerminate) {
       return false;
-    }
-    if (currentTime <= params.begin[0]) {
-      // keep alive
+    } else if (ended || notStarted || !beginDefined) {
       return true;
     }
     const output = outputs[0];
@@ -627,14 +646,18 @@ class PhaseVocoderProcessor extends OLAProcessor {
     this.timeCursor += this.hopSize;
   }
 
-  /** Apply Hann window in-place */
+  /** Apply Hann window in-place
+   * @tags internals
+   */
   applyHannWindow(input) {
     for (let i = 0; i < this.blockSize; i++) {
       input[i] *= this.hannWindow[i] * 1.62;
     }
   }
 
-  /** Compute squared magnitudes for peak finding **/
+  /** Compute squared magnitudes for peak finding
+   * @tags internals
+   **/
   computeMagnitudes() {
     let i = 0,
       j = 0;
@@ -648,7 +671,9 @@ class PhaseVocoderProcessor extends OLAProcessor {
     }
   }
 
-  /** Find peaks in spectrum magnitudes **/
+  /** Find peaks in spectrum magnitudes
+   * @tags internals
+   **/
   findPeaks() {
     this.nbPeaks = 0;
     let i = 2;
@@ -669,7 +694,9 @@ class PhaseVocoderProcessor extends OLAProcessor {
     }
   }
 
-  /** Shift peaks and regions of influence by pitchFactor into new specturm */
+  /** Shift peaks and regions of influence by pitchFactor into new specturm
+   * @tags internals
+   */
   shiftPeaks(pitchFactor) {
     // zero-fill new spectrum
     this.freqComplexBufferShifted.fill(0);
@@ -822,7 +849,9 @@ class PulseOscillatorProcessor extends AudioWorkletProcessor {
 
 registerProcessor('pulse-oscillator', PulseOscillatorProcessor);
 
-/**  BYTE BEATS */
+/**  BYTE BEATS
+ * @tags internals
+ */
 const chyx = {
   /*bit*/ bitC: function (x, y, z) {
     return x & y ? z : 0;
@@ -967,7 +996,9 @@ class EnvelopeProcessor extends AudioWorkletProcessor {
       { name: 'attackCurve', defaultValue: 0, minValue: -1, maxValue: 1 },
       { name: 'decayCurve', defaultValue: 0, minValue: -1, maxValue: 1 },
       { name: 'releaseCurve', defaultValue: 0, minValue: -1, maxValue: 1 },
-      { name: 'peak', defaultValue: 1 },
+      { name: 'depth', defaultValue: 1 },
+      { name: 'min', defaultValue: -1e9 },
+      { name: 'max', defaultValue: 1e9 },
       { name: 'retrigger', defaultValue: 1, minValue: 0, maxValue: 1 },
     ];
   }
@@ -1009,9 +1040,15 @@ class EnvelopeProcessor extends AudioWorkletProcessor {
   }
 
   process(_inputs, outputs, params) {
+    const begin = params['begin'][0];
+    const end = params['end'][0];
+    if (currentTime >= end) {
+      return false;
+    }
+    if (currentTime <= begin) {
+      return true;
+    }
     const out = outputs[0][0];
-    if (!out) return true;
-    const begin = pv(params.begin, 0);
     const retrigger = pv(params.retrigger, 0) >= 0.5; // convert to bool
     if (begin !== this.beginTime && (this.state === 0 || retrigger)) {
       // triggered
@@ -1029,7 +1066,9 @@ class EnvelopeProcessor extends AudioWorkletProcessor {
       const aCurve = pv(params.attackCurve, i);
       const dCurve = pv(params.decayCurve, i);
       const rCurve = pv(params.releaseCurve, i);
-      const peak = pv(params.peak, i);
+      const depth = pv(params.depth, i);
+      const min = pv(params.min, i);
+      const max = pv(params.max, i);
       const states = [
         { time: Number.POSITIVE_INFINITY, start: 0, target: 0 }, // idle
         { time: attack, start: this.attackStart, target: 1, curve: aCurve },
@@ -1043,7 +1082,7 @@ class EnvelopeProcessor extends AudioWorkletProcessor {
         this.state = (this.state + 1) % states.length;
         time = states[this.state].time;
       }
-      out[i] = this.val * peak;
+      out[i] = clamp(this.val * depth, min, max);
     }
     return true;
   }
@@ -1122,8 +1161,8 @@ const tablesCache = {};
 class WavetableOscillatorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'begin', defaultValue: 0, min: 0, max: Number.POSITIVE_INFINITY },
-      { name: 'end', defaultValue: 0, min: 0, max: Number.POSITIVE_INFINITY },
+      { name: 'begin', defaultValue: -1, min: -1, max: Number.POSITIVE_INFINITY },
+      { name: 'end', defaultValue: -1, min: -1, max: Number.POSITIVE_INFINITY },
       { name: 'frequency', defaultValue: 440, min: Number.EPSILON },
       { name: 'detune', defaultValue: 0 },
       { name: 'freqspread', defaultValue: 0.18, min: 0 },
@@ -1138,37 +1177,28 @@ class WavetableOscillatorProcessor extends AudioWorkletProcessor {
 
   constructor(options) {
     super(options);
-    this.frameLen = 0;
-    this.numFrames = 0;
-    this.phase = [];
-
     this.port.onmessage = (e) => {
       const { type, payload } = e.data || {};
-      if (type === 'table') {
-        const key = payload.key;
-        this.frameLen = payload.frameLen;
-        if (!tablesCache[key]) {
-          const tables = [payload.frames];
-          let table = tables[0];
-          for (let level = 1; level < 1; level++) {
-            const nextLen = table.length >> 1;
-            const nextTable = table.map((frame) => {
-              const avg = new Float32Array(nextLen);
-              for (let i = 0; i < nextLen; i++) {
-                avg[i] = (frame[2 * i] + frame[2 * i + 1]) / 2;
-              }
-              return avg;
-            });
-            tables.push(nextTable);
-            table = nextTable;
-            if (nextLen <= 32) break;
-          }
-          tablesCache[key] = tables;
-        }
-        this.tables = tablesCache[key];
-        this.numFrames = this.tables[0].length;
+      if (type === 'initialize') {
+        this.initialize(payload);
       }
     };
+    this.initialize();
+  }
+  initialize(options) {
+    this.table = null;
+    this.frameLen = null;
+    this.numFrames = null;
+    this.phase = [];
+    if (options?.key) {
+      const key = options.key;
+      this.frameLen = options.frameLen;
+      if (!tablesCache[key]) {
+        tablesCache[key] = options.frames;
+      }
+      this.table = tablesCache[key];
+      this.numFrames = this.table.length;
+    }
   }
 
   _mirror(x) {
@@ -1313,25 +1343,23 @@ class WavetableOscillatorProcessor extends AudioWorkletProcessor {
     return a + (b - a) * frac;
   }
 
-  _chooseMip(dphi) {
-    const approxHarm = clamp(dphi, 1e-6, 64);
-    let level = 0;
-    while (level + 1 < (this.tables?.length || 1) && approxHarm < this.tables[level][0].length / 8) {
-      level++;
-    }
-    return level;
-  }
-
   process(_inputs, outputs, parameters) {
-    if (currentTime >= parameters.end[0]) {
+    const begin = parameters.begin[0];
+    const end = parameters.end[0];
+    const beginDefined = begin >= 0;
+    const endDefined = end >= 0;
+    // We give a 0.5s grace period (for node pooling) before termination
+    const shouldTerminate = endDefined && currentTime >= end + 0.5;
+    const ended = endDefined && currentTime >= end;
+    const notStarted = currentTime <= begin;
+    if (shouldTerminate) {
       return false;
-    }
-    if (currentTime <= parameters.begin[0]) {
+    } else if (ended || notStarted || !beginDefined) {
       return true;
     }
     const outL = outputs[0][0];
     const outR = outputs[0][1] || outputs[0][0];
-    if (!this.tables) {
+    if (!this.table) {
       outL.fill(0);
       if (outR !== outL) outR.set(outL);
       return true;
@@ -1365,14 +1393,12 @@ class WavetableOscillatorProcessor extends AudioWorkletProcessor {
         }
         const fVoice = applySemitoneDetuneToFrequency(f, detuner(n)); // voice detune
         const dPhase = fVoice * INVSR;
-        const level = this._chooseMip(dPhase);
-        const table = this.tables[level];
 
         // warp phase then sample
         this.phase[n] = this.phase[n] ?? Math.random() * phaseRand;
         const ph = this._warpPhase(this.phase[n], warpAmount, warpMode);
-        const s0 = this._sampleFrame(table[fIdx], ph);
-        const s1 = this._sampleFrame(table[Math.min(this.numFrames - 1, fIdx + 1)], ph);
+        const s0 = this._sampleFrame(this.table[fIdx], ph);
+        const s1 = this._sampleFrame(this.table[Math.min(this.numFrames - 1, fIdx + 1)], ph);
         let s = lerp(s0, s1, interpT);
         if (warpMode === WarpMode.FLIP && this.phase[n] < warpAmount) {
           s = -s;
@@ -1466,3 +1492,81 @@ class TransientProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('transient-processor', TransientProcessor);
+
+class GenericProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.playPos = 0;
+    const channels = 16;
+    this.outputs = new Array(channels).fill(0);
+    this.sources = new Array(channels).fill(0);
+    this.gateEnded = false;
+    this.started = false;
+    this.port.onmessage = (event) => {
+      let {
+        src,
+        schema: { ugens, registers },
+        start,
+        gateEnd,
+        end,
+      } = event.data;
+      this.start = start;
+      this.gateEnd = gateEnd;
+      this.end = end;
+      this.registers = new Array(registers).fill(0);
+      this.src = `o.fill(0); // reset outputs\n${src}`;
+      this.nodes = [];
+      for (let i = 0; i < ugens.length; i++) {
+        const ugen = ugens[i];
+        const nodeClass = UGENS.get(ugen.type);
+        const node = new nodeClass(i, ugen, sampleRate);
+        if (node.type === 'cc' && ugen.inputs?.[0]?.includes('strudel-gate')) {
+          node.setValue(1);
+          this.gateNode = node;
+        }
+        this.nodes[i] = node;
+      }
+      this.genSample = new Function(
+        'time',
+        'nodes',
+        'input',
+        'r', // registers
+        'o', // outputs
+        's', // sources
+        this.src,
+      );
+    };
+  }
+  process(inputs, outputs) {
+    const input = inputs[0]?.[0];
+    if (currentTime >= this.end) {
+      return false;
+    } else if (this.genSample === undefined || currentTime < this.start) {
+      // pending
+      return true;
+    }
+    this.started = true;
+    if (!this.gateEnded && currentTime > this.gateEnd) {
+      this.gateNode?.setValue(0);
+      this.gateEnded = true;
+    }
+    const output = outputs[0];
+    const outL = output[0];
+    const outR = output[1];
+    for (let n = 0; n < blockSize; n++) {
+      this.genSample(this.playPos, this.nodes, input ? input[n] : 0, this.registers, this.outputs, this.sources);
+      const left = this.outputs[0];
+      const right = this.outputs[1];
+      // Spread to stereo if possible; else mixdown to mono
+      if (outR) {
+        outL[n] = left;
+        outR[n] = right;
+      } else {
+        outL[n] = 0.5 * (left + right);
+      }
+      this.playPos += 1 / sampleRate;
+    }
+    return true;
+  }
+}
+registerProcessor('generic-processor', GenericProcessor);

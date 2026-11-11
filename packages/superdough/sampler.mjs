@@ -1,5 +1,5 @@
 import { getBaseURL, getCommonSampleInfo } from './util.mjs';
-import { registerSound, registerWaveTable } from './index.mjs';
+import { registerSound, registerWaveTable, soundMap } from './index.mjs';
 import { getAudioContext } from './audioContext.mjs';
 import {
   getADSRValues,
@@ -29,6 +29,30 @@ function humanFileSize(bytes, si) {
   } while (bytes >= thresh);
   return bytes.toFixed(1) + ' ' + units[u];
 }
+
+/**
+ * Returns the duration, in seconds, of the given sample.
+ * Has optional param `n` (for instance, the `2` in `s("casio:2")`)
+ *
+ * Note: `must` be called with await, otherwise you'll get a pending Promise object.
+ *
+ * @name getDuration
+ * @synonym getDur
+ * @tags samples
+ * @param {string} sampleName
+ * @param {number} (optional) n
+ *
+ * @example
+ * // Set a patterns cycle length to exactly the length of the sample
+ * samples('github:tidalcycles/dirt-samples')
+ * let k = await getDuration('sax')
+ * s("sax").cps(1/k)
+ */
+export const getDuration = (s, n = 0) => {
+  return getSampleBufferSource({ s, n }, soundMap.get(s)[s].data.samples).then((x) => x.bufferDuration);
+};
+
+export const getDur = getDuration;
 
 export function getSampleInfo(hapValue, bank) {
   const { speed = 1.0 } = hapValue;
@@ -65,21 +89,22 @@ export const getSampleBufferSource = async (hapValue, bank, resolveUrl) => {
   bufferSource.playbackRate.value = playbackRate;
 
   const { loopBegin = 0, loopEnd = 1, begin = 0, end = 1 } = hapValue;
+  const bufferDuration = bufferSource.buffer.duration;
 
-  // "The computation of the offset into the sound is performed using the sound buffer's natural sample rate,
-  // rather than the current playback rate, so even if the sound is playing at twice its normal speed,
-  // the midway point through a 10-second audio buffer is still 5."
-  const offset = begin * bufferSource.buffer.duration;
+  // The computation of the offset into the sound is performed using the sound buffer's natural duration,
+  // rather than the playback duration, so that even if the sound is playing at twice its normal speed,
+  // the midway point through a 10-second audio buffer is still 5.
+  const offset = begin * bufferDuration;
 
   const loop = hapValue.loop;
   if (loop) {
     bufferSource.loop = true;
-    bufferSource.loopStart = loopBegin * bufferSource.buffer.duration - offset;
-    bufferSource.loopEnd = loopEnd * bufferSource.buffer.duration - offset;
+    bufferSource.loopStart = loopBegin * bufferDuration;
+    bufferSource.loopEnd = loopEnd * bufferDuration;
   }
-  const bufferDuration = bufferSource.buffer.duration / bufferSource.playbackRate.value;
-  const sliceDuration = (end - begin) * bufferDuration;
-  return { bufferSource, offset, bufferDuration, sliceDuration };
+  const playbackDuration = bufferDuration / bufferSource.playbackRate.value;
+  const sliceDuration = (end - begin) * playbackDuration;
+  return { bufferSource, offset, bufferDuration, playbackDuration, sliceDuration };
 };
 
 export const loadBuffer = (url, ac, s, n = 0) => {
@@ -234,6 +259,7 @@ export async function fetchSampleMap(url) {
 
 /**
  * Loads a collection of samples to use with `s`
+ * @tags samples
  * @example
  * samples('github:tidalcycles/dirt-samples');
  * s("[bd ~]*2, [~ hh]*2, ~ sd")
@@ -301,7 +327,7 @@ export async function onTriggerSample(t, value, onended, bank, resolveUrl) {
   }
 
   // vibrato
-  let vibratoOscillator = getVibratoOscillator(bufferSource.detune, value, t);
+  const vibratoHandle = getVibratoOscillator(bufferSource.detune, value, t);
 
   const time = t + nudge;
   bufferSource.start(time, offset);
@@ -324,7 +350,7 @@ export async function onTriggerSample(t, value, onended, bank, resolveUrl) {
   node.connect(out);
   onceEnded(bufferSource, function () {
     releaseAudioNode(bufferSource);
-    releaseAudioNode(vibratoOscillator);
+    vibratoHandle?.stop();
     releaseAudioNode(node);
     releaseAudioNode(out);
     onended();
@@ -334,7 +360,7 @@ export async function onTriggerSample(t, value, onended, bank, resolveUrl) {
   const stop = (endTime) => {
     bufferSource.stop(endTime);
   };
-  const handle = { node: out, bufferSource, stop };
+  const handle = { node: out, nodes: { source: [bufferSource], ...vibratoHandle?.nodes }, stop };
 
   // cut groups
   if (cut !== undefined) {

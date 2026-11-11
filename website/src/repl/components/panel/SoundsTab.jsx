@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from 'react';
 import { settingsMap, soundFilterType, useSettings } from '../../../settings.mjs';
 import { ButtonGroup } from './Forms.jsx';
 import ImportSoundsButton from './ImportSoundsButton.jsx';
-import { Textbox } from '../textbox/Textbox.jsx';
+import { Textbox } from '@src/repl/components/panel/SettingsTab.jsx';
 import { ActionButton } from '../button/action-button.jsx';
 import { confirmDialog } from '@src/repl/util.mjs';
 import { clearIDB, userSamplesDBConfig } from '@src/repl/idbutils.mjs';
@@ -77,11 +77,12 @@ export function SoundsTab() {
     numRef.current = 0;
   });
   return (
-    <div id="sounds-tab" className="px-4 flex gap-2 flex-col w-full h-full text-foreground">
-      <Textbox placeholder="Search" value={search} onChange={(v) => setSearch(v)} />
+    <div id="sounds-tab" className="flex flex-col w-full h-full text-foreground">
+      <Textbox placeholder="Search..." className="border-0" value={search} onChange={(v) => setSearch(v)} />
 
-      <div className=" flex shrink-0 flex-wrap">
+      <div className="flex shrink-0 flex-wrap border-y border-muted">
         <ButtonGroup
+          wrap
           value={soundsFilter}
           onChange={(value) => settingsMap.setKey('soundsFilter', value)}
           items={{
@@ -114,7 +115,7 @@ export function SoundsTab() {
         />
       )}
 
-      <div className="min-h-0 max-h-full grow overflow-auto  text-sm break-normal bg-background p-2 rounded-md">
+      <div className="min-h-0 max-h-full grow overflow-auto break-normal p-2">
         {soundEntries.map(([name, { data, onTrigger }]) => {
           return (
             <span
@@ -165,7 +166,7 @@ export function SoundsTab() {
           );
         })}
         {!soundEntries.length && soundsFilter === 'importSounds' ? (
-          <div className="prose dark:prose-invert min-w-full pt-2 pb-8 px-4">
+          <div className="prose dark:prose-invert min-w-full text-sm">
             <ImportSoundsButton onComplete={() => settingsMap.setKey('soundsFilter', 'user')} />
             <p>
               To import sounds into strudel, they must be contained{' '}
@@ -210,7 +211,11 @@ export function SoundsTab() {
         ) : (
           ''
         )}
-        {!soundEntries.length && soundsFilter !== 'importSounds' ? 'No sounds loaded' : ''}
+        {!soundEntries.length && soundsFilter !== 'importSounds'
+          ? search == ''
+            ? 'No sounds loaded'
+            : 'No sounds found'
+          : ''}
       </div>
     </div>
   );

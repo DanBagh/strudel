@@ -100,6 +100,7 @@ function scaleOffset(scale, offset, note) {
  * - 5P = perfect fifth
  * - 5d = diminished fifth
  *
+ * @tags tonal
  * @param {string | number} amount Either number of semitones or interval string.
  * @returns Pattern
  * @memberof Pattern
@@ -136,7 +137,14 @@ export const { transpose, trans } = register(['transpose', 'trans'], function tr
     const interval = !isNaN(Number(intervalOrSemitones))
       ? Interval.fromSemitones(intervalOrSemitones)
       : String(intervalOrSemitones);
-    const targetNote = Note.transpose(note, interval);
+
+    let n = Note.get(note);
+    if (n.oct == undefined) {
+      n.oct = 3;
+      let n1 = Note.get(Note.transpose(n, interval));
+      n.oct = n1.oct == 3 ? undefined : 3;
+    }
+    const targetNote = Note.transpose(n, interval);
     if (typeof hap.value === 'object') {
       return hap.withValue(() => ({ ...hap.value, note: targetNote }));
     }
@@ -154,6 +162,7 @@ export const { transpose, trans } = register(['transpose', 'trans'], function tr
  *
  * @memberof Pattern
  * @name scaleTranspose
+ * @tags tonal
  * @param {offset} offset number of steps inside the scale
  * @returns Pattern
  * @synonyms scaleTrans, strans
@@ -244,6 +253,7 @@ function _getNearestScaleNote(scaleName, note, preferHigher = true) {
  * The root note defaults to octave 3, if no octave number is given.
  *
  * @name scale
+ * @tags tonal
  * @param {string} scale Name of scale
  * @returns Pattern
  * @example

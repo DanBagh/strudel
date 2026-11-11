@@ -8,7 +8,7 @@ import {
   useViewingPatternData,
   userPattern,
 } from '../../../user_pattern_utils.mjs';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { getMetadata } from '../../../metadata_parser.js';
 import { useExamplePatterns } from '../../useExamplePatterns.jsx';
 import { parseJSON, isUdels } from '../../util.mjs';
@@ -18,6 +18,7 @@ import { Pagination } from '../pagination/Pagination.jsx';
 import { useState } from 'react';
 import { useDebounce } from '../usedebounce.jsx';
 import cx from '@src/cx.mjs';
+import { Textbox } from '@src/repl/components/panel/SettingsTab.jsx';
 
 export function PatternLabel({ pattern } /* : { pattern: Tables<'code'> } */) {
   const meta = useMemo(() => getMetadata(pattern.code), [pattern]);
@@ -28,12 +29,12 @@ export function PatternLabel({ pattern } /* : { pattern: Tables<'code'> } */) {
     if (!isNaN(date)) {
       title = date.toLocaleDateString();
     } else {
-      title = 'unnamed';
+      title = pattern.id || 'unnamed';
     }
   }
 
   const author = Array.isArray(meta.by) ? meta.by.join(',') : 'Anonymous';
-  return <>{`${pattern.id}: ${title} by ${author.slice(0, 100)}`.slice(0, 60)}</>;
+  return <>{`${title} by ${author.slice(0, 100)}`.slice(0, 60)}</>;
 }
 
 function PatternButton({ showOutline, onClick, pattern, showHiglight }) {
@@ -42,7 +43,7 @@ function PatternButton({ showOutline, onClick, pattern, showHiglight }) {
       className={cx(
         'mr-4 hover:opacity-50 cursor-pointer block',
         showOutline && 'outline outline-1',
-        showHiglight && 'bg-selection',
+        showHiglight && 'ring-selection',
       )}
       onClick={onClick}
     >
@@ -52,11 +53,10 @@ function PatternButton({ showOutline, onClick, pattern, showHiglight }) {
 }
 
 function PatternButtons({ patterns, activePattern, onClick, started }) {
-  const viewingPatternStore = useViewingPatternData();
-  const viewingPatternData = parseJSON(viewingPatternStore);
+  const viewingPatternData = useViewingPatternData();
   const viewingPatternID = viewingPatternData.id;
   return (
-    <div className="">
+    <div className="p-2">
       {Object.values(patterns)
         .reverse()
         .map((pattern) => {
@@ -79,15 +79,54 @@ const updateCodeWindow = (context, patternData, reset = false) => {
   context.handleUpdate(patternData, reset);
 };
 
-function UserPatterns({ context }) {
+export function PatternsTab({ context }) {
+  const [search, setSearch] = useState('');
   const activePattern = useActivePattern();
-  const viewingPatternStore = useViewingPatternData();
-  const viewingPatternData = parseJSON(viewingPatternStore);
-  const { userPatterns, patternFilter, patternAutoStart } = useSettings();
+  const viewingPatternData = useViewingPatternData();
+
+  const { userPatterns, patternAutoStart } = useSettings();
   const viewingPatternID = viewingPatternData?.id;
+
+  const visiblePatterns = useMemo(() => {
+    if (!search) {
+      return userPatterns;
+    }
+    return Object.fromEntries(
+      Object.entries(userPatterns).filter(([_key, pattern]) => {
+        const meta = getMetadata(pattern.code);
+
+        // Search for specific meta keys
+        const searchLowercaseTrimmed = search.trim().toLowerCase();
+        if (searchLowercaseTrimmed.includes(':')) {
+          const [metaKey, metaSearch] = searchLowercaseTrimmed.split(/:\s*/);
+          if (metaKey !== undefined && metaSearch !== undefined && metaKey in meta) {
+            const metaValues = meta[metaKey];
+            if (Array.isArray(metaValues)) {
+              return metaValues.some((metaValue) => metaValue.toLowerCase().includes(metaSearch));
+            } else if (typeof metaValues === 'string') {
+              return metaValues.toLowerCase().includes(metaSearch);
+            } else {
+              return false;
+            }
+          }
+        }
+        const title = meta.title ? meta.title : 'unnamed';
+        const authors = meta.by ? meta.by : ['anonymous'];
+        const tags = meta.tag ? meta.tag : [];
+        return (
+          title.toLowerCase().includes(searchLowercaseTrimmed) ||
+          authors.some((author) => author.toLowerCase().includes(searchLowercaseTrimmed)) ||
+          tags.some((tag) => tag.toLowerCase().includes(searchLowercaseTrimmed))
+        );
+      }),
+    );
+  }, [search, userPatterns]);
+
+  const importRef = useRef();
   return (
-    <div className="flex flex-col gap-2 flex-grow overflow-hidden h-full pb-2 ">
-      <div className="pr-4 space-x-4  flex max-w-full overflow-x-auto">
+    <div className="w-full h-full text-foreground flex flex-col overflow-hidden">
+      <Textbox className="w-full border-0" placeholder="Search..." value={search} onChange={setSearch} />
+      <div className="px-2 shrink-0 h-8 space-x-4 flex max-w-full overflow-x-auto border-y border-muted">
         <ActionButton
           label="new"
           onClick={() => {
@@ -109,16 +148,15 @@ function UserPatterns({ context }) {
             updateCodeWindow(context, { ...data, collection: userPattern.collection });
           }}
         />
-        <label className="hover:opacity-50 cursor-pointer">
-          <input
-            style={{ display: 'none' }}
-            type="file"
-            multiple
-            accept="text/plain,text/x-markdown,application/json"
-            onChange={(e) => importPatterns(e.target.files)}
-          />
-          import
-        </label>
+        <input
+          ref={importRef}
+          style={{ display: 'none' }}
+          type="file"
+          multiple
+          accept="text/plain,text/x-markdown,application/json"
+          onChange={(e) => importPatterns(e.target.files)}
+        />
+        <ActionButton label="import" onClick={() => importRef.current.click()} />
         <ActionButton label="export" onClick={exportPatterns} />
 
         <ActionButton
@@ -130,7 +168,8 @@ function UserPatterns({ context }) {
         />
       </div>
 
-      <div className="overflow-auto h-full bg-background p-2 rounded-md">
+      <div className="overflow-auto">
+        {/* bg-background */}
         {/* {patternFilter === patternFilterName.user && ( */}
         <PatternButtons
           onClick={(id) => {
@@ -140,7 +179,7 @@ function UserPatterns({ context }) {
               context.handleEvaluate();
             }
           }}
-          patterns={userPatterns}
+          patterns={visiblePatterns}
           started={context.started}
           activePattern={activePattern}
           viewingPatternID={viewingPatternID}
@@ -231,29 +270,4 @@ function PublicPatterns({ context }) {
     return <FeaturedPatterns context={context} />;
   }
   return <LatestPatterns context={context} />;
-}
-
-export function PatternsTab({ context }) {
-  const { patternFilter } = useSettings();
-
-  return (
-    <div className="px-4 w-full text-foreground  space-y-2  flex flex-col overflow-hidden max-h-full h-full">
-      <UserPatterns context={context} />
-    </div>
-  );
-  /* return (
-    <div className="px-4 w-full text-foreground  space-y-2  flex flex-col overflow-hidden max-h-full h-full">
-      <ButtonGroup
-        value={patternFilter}
-        onChange={(value) => settingsMap.setKey('patternFilter', value)}
-        items={patternFilterName}
-      ></ButtonGroup>
-
-      {patternFilter === patternFilterName.user ? (
-        <UserPatterns context={context} />
-      ) : (
-        <PublicPatterns context={context} />
-      )}
-    </div>
-  ); */
 }

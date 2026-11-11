@@ -13,7 +13,7 @@ Let's take a closer look about how sounds are implemented in the webaudio output
 
 All sounds are registered in the sound map, using the the `registerSound` function:
 
-```ts
+```js
 function registerSound(
   name: string, // The name of the sound that should be given to `s`, e.g. `mysaw`
   // The function called by the scheduler to trigger the sound:
@@ -35,34 +35,36 @@ When `registerSound` is called, it registers `{ onTrigger, data }` under the giv
 
 This might be a bit abstract, so here is a minimal example:
 
-```js
-registerSound(
-  'mysaw',
-  (time, value, onended) => {
-    let { freq } = value; // destructure control params
-    const ctx = getAudioContext();
-    // create oscillator
-    const o = new OscillatorNode(ctx, { type: 'sawtooth', frequency: Number(freq) });
-    o.start(time);
-    // add gain node to level down osc
-    const g = new GainNode(ctx, { gain: 0.3 });
-    // connect osc to gain
-    const node = o.connect(g);
-    // this function can be called from outside to stop the sound
-    const stop = (time) => o.stop(time);
-    // ended will be fired when stop has been fired
-    o.addEventListener('ended', () => {
-      o.disconnect();
-      g.disconnect();
-      onended();
-    });
-    return { node, stop };
-  },
-  { type: 'synth' },
-);
-// use the sound
-freq(220, 440, 330).s('mysaw');
-```
+<MiniRepl
+  client:idle
+  tune={`
+  registerSound(
+    'mysaw',
+    (time, value, onended) => {
+      let { freq } = value; // destructure control params
+      const ctx = getAudioContext();
+      // create oscillator
+      const o = new OscillatorNode(ctx, { type: 'sawtooth', frequency: Number(freq) });
+      o.start(time);
+      // add gain node to level down osc
+      const g = new GainNode(ctx, { gain: 0.3 });
+      // connect osc to gain
+      const node = o.connect(g);
+      // this function can be called from outside to stop the sound
+      const stop = (time) => o.stop(time);
+      // ended will be fired when stop has been fired
+      o.addEventListener('ended', () => {
+        o.disconnect();
+        g.disconnect();
+        onended();
+      });
+      return { node, stop };
+    },
+    { type: 'synth' },
+  );
+  // use the sound
+  freq("220 440 330").s('mysaw');`}
+/>
 
 You can actually use this code in the [REPL](https://strudel.cc/) and it'll work.
 After evaluating the code, you should see `mysaw` in listed in the sounds tab.

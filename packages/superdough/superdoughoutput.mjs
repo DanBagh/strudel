@@ -1,8 +1,20 @@
+/*
+superdoughoutput.mjs - Output controller for superdough
+
+Handles setting up and mixing to the outputs as well as all global (orbit) effects
+
+Copyright (C) 2025 Strudel contributors - see <https://codeberg.org/uzu/strudel/src/branch/main/packages/superdough/superdoughoutput.mjs>
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
 import { effectSend, getWorklet, webAudioTimeout } from './helpers.mjs';
 import { errorLogger } from './logger.mjs';
 import { clamp } from './util.mjs';
 
-let hasChanged = (now, before) => now !== undefined && now !== before;
+const hasChanged = (now, before) => now !== undefined && now !== before;
+// Node with fixed stereo channel count to prevent clicking when the input signal
+// switches from mono to stereo
+const getStereoNode = (ac) => new GainNode(ac, { gain: 1, channelCount: 2, channelCountMode: 'explicit' });
 
 export class Orbit {
   reverbNode;
@@ -11,10 +23,11 @@ export class Orbit {
   summingNode;
   djfNode;
   audioContext;
+
   constructor(audioContext) {
     this.audioContext = audioContext;
-    this.output = new GainNode(audioContext, { gain: 1, channelCount: 2, channelCountMode: 'explicit' });
-    this.summingNode = new GainNode(audioContext, { gain: 1, channelCount: 2, channelCountMode: 'explicit' });
+    this.output = getStereoNode(audioContext);
+    this.summingNode = getStereoNode(audioContext);
     this.summingNode.connect(this.output);
   }
 
@@ -34,6 +47,7 @@ export class Orbit {
     }
     const val = this.djfNode.parameters.get('value');
     val.setValueAtTime(value, t);
+    return this.djfNode;
   }
 
   getDelay(delaytime = 0, feedback = 0.5, t) {
@@ -164,6 +178,7 @@ export class SuperdoughAudioController {
   audioContext;
   output;
   nodes = {};
+  buses = {};
 
   constructor(audioContext) {
     this.audioContext = audioContext;
@@ -171,10 +186,14 @@ export class SuperdoughAudioController {
   }
 
   reset() {
-    Array.from(this.nodes).forEach((node) => {
+    Object.values(this.nodes).forEach((node) => {
       node.disconnect();
     });
+    Object.values(this.buses).forEach((bus) => {
+      bus.disconnect();
+    });
     this.nodes = {};
+    this.buses = {};
     this.output.reset();
   }
 
@@ -205,5 +224,12 @@ export class SuperdoughAudioController {
       this.output.connectToDestination(this.nodes[orbitNum].output, channels);
     }
     return this.nodes[orbitNum];
+  }
+
+  getBus(busNum) {
+    if (this.buses[busNum] == null) {
+      this.buses[busNum] = getStereoNode(this.audioContext);
+    }
+    return this.buses[busNum];
   }
 }

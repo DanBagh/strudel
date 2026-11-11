@@ -1,14 +1,30 @@
 import { getAudioContext } from './audioContext.mjs';
 import { logger } from './logger.mjs';
 import { getNoiseBuffer } from './noise.mjs';
+import { getNodeFromPool } from './nodePools.mjs';
 import { clamp, nanFallback, midiToFreq, noteToMidi } from './util.mjs';
 
 export const noises = ['pink', 'white', 'brown', 'crackle'];
 
-export function gainNode(value) {
-  const node = getAudioContext().createGain();
+export function gainNode(value, audioContext = getAudioContext()) {
+  const node = audioContext.createGain();
   node.gain.value = value;
   return node;
+}
+
+// this helper makes sure the audio context is "used", meaning it outputs something
+// this prevents the browser from throttling timing accuracy
+// it happened when only midi was running, the clock got more drifty without this
+let constantNode, constantNodeAudioContext;
+export function ensureMinimalOutput() {
+  if (constantNode && constantNodeAudioContext === getAudioContext()) {
+    return;
+  }
+  constantNodeAudioContext = getAudioContext();
+  constantNode = new ConstantSourceNode(constantNodeAudioContext);
+  constantNode.offset.value = 1e-7;
+  constantNode.connect(constantNodeAudioContext.destination);
+  constantNode.start();
 }
 
 export function effectSend(input, effect, wet) {
@@ -104,22 +120,40 @@ function getModulationShapeInput(val) {
   return { tri: 0, triangle: 0, sine: 1, ramp: 2, saw: 3, square: 4 }[val] ?? 0;
 }
 
-export function getLfo(audioContext, begin, end, properties = {}) {
-  const { shape = 0, ...props } = properties;
-  const { dcoffset = -0.5, depth = 1 } = properties;
+export function getEnvelope(audioContext, properties = {}) {
+  return getWorklet(audioContext, 'envelope-processor', properties);
+}
+
+export function getLfo(audioContext, properties = {}) {
+  const {
+    shape = 0,
+    begin = 0,
+    end = 0,
+    time,
+    depth = 1,
+    dcoffset = -0.5,
+    frequency = 1,
+    skew = 0.5,
+    phaseoffset = 0,
+    curve = 1,
+    min,
+    max,
+    ...props
+  } = properties;
+
   const lfoprops = {
-    frequency: 1,
-    depth,
-    skew: 0.5,
-    phaseoffset: 0,
-    time: begin,
     begin,
     end,
-    shape: getModulationShapeInput(shape),
+    time: time ?? begin,
+    depth,
     dcoffset,
-    min: dcoffset * depth,
-    max: dcoffset * depth + depth,
-    curve: 1,
+    frequency,
+    skew,
+    phaseoffset,
+    curve,
+    shape: getModulationShapeInput(shape),
+    min: min ?? dcoffset * depth,
+    max: max ?? dcoffset * depth + depth,
     ...props,
   };
 
@@ -127,6 +161,7 @@ export function getLfo(audioContext, begin, end, properties = {}) {
 }
 
 export function getCompressor(ac, threshold, ratio, knee, attack, release) {
+  const node = getNodeFromPool('compressor', () => new DynamicsCompressorNode(ac, {}));
   const options = {
     threshold: threshold ?? -3,
     ratio: ratio ?? 10,
@@ -134,7 +169,10 @@ export function getCompressor(ac, threshold, ratio, knee, attack, release) {
     attack: attack ?? 0.005,
     release: release ?? 0.05,
   };
-  return new DynamicsCompressorNode(ac, options);
+  Object.entries(options).forEach(([key, value]) => {
+    node[key].value = value;
+  });
+  return node;
 }
 
 // changes the default values of the envelope based on what parameters the user has defined
@@ -149,6 +187,7 @@ export const getADSRValues = (params, curve = 'linear', defaultValues) => {
   if (a == null && d == null && s == null && r == null) {
     return defaultValues ?? [envmin, envmin, envmax, releaseMin];
   }
+
   const sustain = s != null ? s : (a != null && d == null) || (a == null && d == null) ? envmax : envmin;
   return [Math.max(a ?? 0, envmin), Math.max(d ?? 0, envmin), Math.min(sustain, envmax), Math.max(r ?? 0, releaseMin)];
 };
@@ -161,7 +200,9 @@ export function getParamLfo(audioContext, param, start, end, lfoValues) {
   }
   let lfo;
   if (depth) {
-    lfo = getLfo(audioContext, start, end, {
+    lfo = getLfo(audioContext, {
+      begin: start,
+      end,
       depth,
       dcoffset,
       ...getLfoInputs,
@@ -213,10 +254,12 @@ export function createFilter(context, start, end, params, cps, cycle) {
     filter = getWorklet(context, 'ladder-processor', { frequency, q, drive });
     frequencyParam = filter.parameters.get('frequency');
   } else {
-    filter = context.createBiquadFilter();
+    const factory = () => context.createBiquadFilter();
+    filter = getNodeFromPool('filter', factory);
     filter.type = type;
-    filter.Q.value = q;
-    filter.frequency.value = frequency;
+    Object.entries({ Q: q, frequency }).forEach(([key, value]) => {
+      filter[key].value = value;
+    });
     frequencyParam = filter.frequency;
   }
   const envelopeValues = [params.attack, params.decay, params.sustain, params.release];
@@ -331,7 +374,7 @@ export function getVibratoOscillator(param, value, t) {
       releaseAudioNode(vibratoOscillator);
     });
     vibratoOscillator.start(t);
-    return vibratoOscillator;
+    return { stop: (t) => vibratoOscillator.stop(t), nodes: { vib: [vibratoOscillator], vib_gain: [gain] } };
   }
 }
 
@@ -346,7 +389,7 @@ export function webAudioTimeout(audioContext, onComplete, startTime, stopTime) {
 
   // Certain browsers requires audio nodes to be connected in order for their onended events
   // to fire, so we _mute it_ and then connect it to the destination
-  const zeroGain = gainNode(0);
+  const zeroGain = gainNode(0, audioContext);
   zeroGain.connect(audioContext.destination);
   constantNode.connect(zeroGain);
 
@@ -387,6 +430,7 @@ export function applyFM(param, value, begin) {
   const ac = getAudioContext();
   const toStop = []; // fm oscillators we will expose `stop` for
   const fms = {};
+  const nodes = {};
   // Matrix
   for (let i = 1; i <= 8; i++) {
     for (let j = 0; j <= 8; j++) {
@@ -437,11 +481,14 @@ export function applyFM(param, value, begin) {
             output = osc.connect(envGain);
           }
           fms[idx] = { input: osc.frequency, output, freq, osc, toCleanup };
+          nodes[`fm_${idx}`] = [osc];
         }
         const { input, output, freq, osc, toCleanup } = fms[idx];
-        const g = gainNode(amt * freq);
-        io.push(isMod ? output.connect(g) : input);
-        cleanupOnEnd(osc, [...toCleanup, g]);
+        const gAmt = gainNode(amt);
+        const gFreq = gainNode(freq);
+        io.push(isMod ? output.connect(gAmt).connect(gFreq) : input);
+        cleanupOnEnd(osc, [...toCleanup, gAmt, gFreq]);
+        nodes[`fm_${idx}_gain`] = [gAmt];
       }
       if (!io[1]) {
         logger(
@@ -454,6 +501,7 @@ export function applyFM(param, value, begin) {
     }
   }
   return {
+    nodes,
     stop: (t) => toStop.forEach((m) => m?.stop(t)),
   };
 }

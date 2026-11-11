@@ -35,7 +35,9 @@ class OLAProcessor extends AudioWorkletProcessor {
   }
 
   /** Handles dynamic reallocation of input/output channels buffer
-     (channel numbers may lety during lifecycle) **/
+   * (channel numbers may vary during lifecycle)
+   * @tags internals
+   **/
   reallocateChannelsIfNeeded(inputs, outputs) {
     for (let i = 0; i < this.nbInputs; i++) {
       let nbChannels = inputs[i].length;
@@ -88,7 +90,10 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Read next web audio block to input buffers **/
+  /**
+   * Read next web audio block to input buffers
+   * @tags internals
+   **/
   readInputs(inputs) {
     // when playback is paused, we may stop receiving new samples
     if (inputs[0].length && inputs[0][0].length == 0) {
@@ -108,7 +113,9 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Write next web audio block from output buffers **/
+  /** Write next web audio block from output buffers
+   * @tags internals
+   **/
   writeOutputs(outputs) {
     for (let i = 0; i < this.nbInputs; i++) {
       for (let j = 0; j < this.inputBuffers[i].length; j++) {
@@ -118,7 +125,9 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Shift left content of input buffers to receive new web audio block **/
+  /** Shift left content of input buffers to receive new web audio block
+   * @tags internals
+   **/
   shiftInputBuffers() {
     for (let i = 0; i < this.nbInputs; i++) {
       for (let j = 0; j < this.inputBuffers[i].length; j++) {
@@ -127,7 +136,9 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Shift left content of output buffers to receive new web audio block **/
+  /** Shift left content of output buffers to receive new web audio block
+   * @tags internals
+   **/
   shiftOutputBuffers() {
     for (let i = 0; i < this.nbOutputs; i++) {
       for (let j = 0; j < this.outputBuffers[i].length; j++) {
@@ -137,7 +148,9 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Copy contents of input buffers to buffer actually sent to process **/
+  /** Copy contents of input buffers to buffer actually sent to process
+   * @tags internals
+   **/
   prepareInputBuffersToSend() {
     for (let i = 0; i < this.nbInputs; i++) {
       for (let j = 0; j < this.inputBuffers[i].length; j++) {
@@ -146,7 +159,9 @@ class OLAProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Add contents of output buffers just processed to output buffers **/
+  /** Add contents of output buffers just processed to output buffers
+   * @tags internals
+   **/
   handleOutputBuffersToRetrieve() {
     for (let i = 0; i < this.nbOutputs; i++) {
       for (let j = 0; j < this.outputBuffers[i].length; j++) {

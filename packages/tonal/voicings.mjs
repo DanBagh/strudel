@@ -90,6 +90,7 @@ export const setVoicingRange = (name, range) => addVoicings(name, voicingRegistr
  * Adds a new custom voicing dictionary.
  *
  * @name addVoicings
+ * @tags tonal
  * @memberof Pattern
  * @param {string} name identifier for the voicing dictionary
  * @param {Object} dictionary maps chord symbol to possible voicings
@@ -133,6 +134,7 @@ const getVoicing = (chord, dictionaryName, lastVoicing) => {
  * Uses [chord-voicings package](https://github.com/felixroos/chord-voicings#chord-voicings).
  *
  * @name voicings
+ * @tags tonal
  * @memberof Pattern
  * @param {string} dictionary which voicing dictionary to use.
  * @returns Pattern
@@ -157,6 +159,7 @@ export const voicings = register('voicings', function (dictionary, pat) {
  * Maps the chords of the incoming pattern to root notes in the given octave.
  *
  * @name rootNotes
+ * @tags tonal
  * @memberof Pattern
  * @param {octave} octave octave to use
  * @returns Pattern
@@ -182,6 +185,9 @@ export const rootNotes = register('rootNotes', function (octave, pat) {
  *   - `below`: top note <= anchor
  *   - `duck`: top note <= anchor, anchor excluded
  *   - `above`: bottom note >= anchor
+ *   - `root`: bottom note is the lowest root of the chord >= anchor
+ *   - `oldabove` : old (buggy) behavior of above, kept for legacy reason
+ *   - `oldroot` : old (buggy) behavior of root, kept for legacy reason
  * - `offset`: whole number that shifts the voicing up or down to the next voicing
  * - `n`: if set, the voicing is played like a scale. Overshooting numbers will be octaved
  *
@@ -189,6 +195,7 @@ export const rootNotes = register('rootNotes', function (octave, pat) {
  * If you pass a pattern of strings to voicing, they will be interpreted as chords.
  *
  * @name voicing
+ * @tags tonal
  * @returns Pattern
  * @example
  * n("0 1 2 3").chord("<C Am F G>").voicing()

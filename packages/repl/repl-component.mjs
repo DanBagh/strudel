@@ -1,11 +1,12 @@
 import { silence } from '@strudel/core';
 import { getDrawContext } from '@strudel/draw';
 import { transpiler } from '@strudel/transpiler';
-import { getAudioContext, webaudioOutput } from '@strudel/webaudio';
+import { getAudioContext, webaudioOutput, initAudioOnFirstClick } from '@strudel/webaudio';
 import { StrudelMirror, codemirrorSettings } from '@strudel/codemirror';
 import { prebake } from './prebake.mjs';
 
 if (typeof HTMLElement !== 'undefined') {
+  initAudioOnFirstClick();
   class StrudelRepl extends HTMLElement {
     static observedAttributes = ['code'];
     settings = codemirrorSettings.get();
@@ -36,7 +37,7 @@ if (typeof HTMLElement !== 'undefined') {
       const drawContext = getDrawContext();
       const drawTime = [-2, 2];
       this.editor = new StrudelMirror({
-        defaultOutput: webaudioOutput,
+        onSchedule: webaudioOutput,
         getTime: () => getAudioContext().currentTime,
         transpiler,
         root: container,

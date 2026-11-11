@@ -42,6 +42,7 @@ const getValue = (e) => {
  *
  * @name pianoroll
  * @synonyms punchcard
+ * @tags visualization
  * @param {Object} options Object containing all the optional following parameters as key value pairs:
  * @param {integer} cycles number of cycles to be displayed at the same time - defaults to 4
  * @param {number} playhead location of the active notes on the time axis - 0 to 1, defaults to 0.5
@@ -299,6 +300,7 @@ Pattern.prototype.punchcard = function (options) {
  * Supports all the same options as pianoroll.
  *
  * @name wordfall
+ * @tags visualization
  */
 Pattern.prototype.wordfall = function (options) {
   return this.punchcard({ vertical: 1, labels: 1, stroke: 0, fillActive: 1, active: 'white', ...options });

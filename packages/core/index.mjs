@@ -22,7 +22,7 @@ export * from './repl.mjs';
 export * from './signal.mjs';
 export * from './speak.mjs';
 export * from './state.mjs';
-export * from './time.mjs';
+export * from './schedulerState.mjs';
 export * from './timespan.mjs';
 export * from './ui.mjs';
 export * from './util.mjs';

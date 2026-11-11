@@ -1,10 +1,7 @@
-import PlayCircleIcon from '@heroicons/react/20/solid/PlayCircleIcon';
 import cx from '@src/cx.mjs';
-import NumberInput from '@src/repl/components/NumberInput';
-import { useEffect, useState } from 'react';
-import { Textbox } from '../textbox/Textbox';
+import { useState } from 'react';
+import { Textbox } from '@src/repl/components/panel/SettingsTab';
 import { getAudioContext } from '@strudel/webaudio';
-import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 
 function Checkbox({ label, value, onChange, disabled = false }) {
   return (
@@ -48,7 +45,7 @@ export default function ExportTab(Props) {
 
   return (
     <>
-      <div className="text-foreground w-full p-4 space-y-4">
+      <div className="text-foreground w-full space-y-4 p-4">
         <FormItem label="File name" disabled={exporting}>
           <Textbox
             onBlur={(e) => {
@@ -59,14 +56,14 @@ export default function ExportTab(Props) {
             }}
             disabled={exporting}
             placeholder="Leave empty to use current date"
-            className={cx('placeholder:opacity-50', exporting && 'opacity-50 border-opacity-50')}
+            className={cx('placeholder-muted', exporting && 'opacity-50 border-opacity-50')}
             value={downloadName ?? ''}
           />
         </FormItem>
         <div className="flex flex-row gap-4 w-full">
           <FormItem label="Start cycle" disabled={exporting}>
             <Textbox
-              min={1}
+              min={0}
               max={Infinity}
               onBlur={(e) => {
                 let v = parseInt(e.target.value);

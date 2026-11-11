@@ -2,6 +2,7 @@ import { persistentMap } from '@nanostores/persistent';
 import { useStore } from '@nanostores/react';
 import { register } from '@strudel/core';
 import { isUdels } from './repl/util.mjs';
+import { computed } from 'nanostores';
 
 export const audioEngineTargets = {
   webaudio: 'webaudio',
@@ -16,6 +17,20 @@ export const soundFilterType = {
   WAVETABLES: 'wavetables',
   ALL: 'all',
 };
+
+const initialPrebakeScript = `// Prebake script
+//
+// This is code that is loaded before your pattern is run.
+// You can use it to define custom functions to use in any pattern.
+// 
+// This is an initial example script. You can edit it to add 
+// your own funtions.
+//
+// To use a script shared by some other user you can use
+// the import-button or paste the script in this editor.
+
+const ratchet = register('ratchet', (pat) => pat.sometimes(ply(2)))
+`;
 
 export const defaultSettings = {
   activeFooter: 'intro',
@@ -38,20 +53,21 @@ export const defaultSettings = {
   latestCode: '',
   isZen: false,
   soundsFilter: soundFilterType.ALL,
+  referenceTag: 'all',
   patternFilter: 'community',
   // panelPosition: window.innerWidth > 1000 ? 'right' : 'bottom', //FIX: does not work on astro
   panelPosition: 'right',
   isPanelPinned: false,
   isPanelOpen: true,
-  togglePanelTrigger: 'click', //click | hover
   userPatterns: '{}',
-  prebakeScript: '',
+  prebakeScript: initialPrebakeScript,
   audioEngineTarget: audioEngineTargets.webaudio,
   isButtonRowHidden: false,
   isCSSAnimationDisabled: false,
   maxPolyphony: 128,
   multiChannelOrbits: false,
   includePrebakeScriptInShare: true,
+  settingsTab: 'settings',
 };
 
 let search = null;
@@ -64,11 +80,7 @@ const settings_key = `strudel-settings${instance > 0 ? instance : ''}`;
 
 export const settingsMap = persistentMap(settings_key, defaultSettings);
 
-export const parseBoolean = (booleanlike) => ([true, 'true'].includes(booleanlike) ? true : false);
-
-export function useSettings() {
-  const state = useStore(settingsMap);
-
+export const $settings = computed(settingsMap, (state) => {
   const userPatterns = JSON.parse(state.userPatterns);
   Object.keys(userPatterns).forEach((key) => {
     const data = userPatterns[key];
@@ -105,11 +117,18 @@ export function useSettings() {
         ? true
         : parseBoolean(state.patternAutoStart),
   };
+});
+
+export const parseBoolean = (booleanlike) => ([true, 'true'].includes(booleanlike) ? true : false);
+
+export function useSettings() {
+  return useStore($settings);
 }
 
 export const setActiveFooter = (tab) => settingsMap.setKey('activeFooter', tab);
 export const setPanelPinned = (bool) => settingsMap.setKey('isPanelPinned', bool);
 export const setIsPanelOpened = (bool) => settingsMap.setKey('isPanelOpen', bool);
+export const setSettingsTab = (tab) => settingsMap.setKey('settingsTab', tab);
 
 export const storePrebakeScript = (script) => settingsMap.setKey('prebakeScript', script);
 
@@ -117,7 +136,7 @@ export const setIsZen = (active) => settingsMap.setKey('isZen', !!active);
 
 const patternSetting = (key) =>
   register(key, (value, pat) =>
-    pat.onTrigger(() => {
+    pat.onSchedule(() => {
       value = Array.isArray(value) ? value.join(' ') : value;
       if (value !== settingsMap.get()[key]) {
         settingsMap.setKey(key, value);

@@ -1,5 +1,5 @@
 import { closeBrackets } from '@codemirror/autocomplete';
-import { indentWithTab, toggleLineComment } from '@codemirror/commands';
+import { indentWithTab } from '@codemirror/commands';
 import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -12,7 +12,7 @@ import {
   lineNumbers,
 } from '@codemirror/view';
 import { persistentAtom } from '@nanostores/persistent';
-import { logger, registerControl, repl } from '@strudel/core';
+import { registerControl, repl } from '@strudel/core';
 import { cleanupDraw, Drawer } from '@strudel/draw';
 
 import { isAutoCompletionEnabled } from './autocomplete.mjs';
@@ -24,6 +24,7 @@ import { sliderPlugin, updateSliderWidgets } from './slider.mjs';
 import { activateTheme, initTheme, theme } from './themes.mjs';
 import { isTooltipEnabled } from './tooltip.mjs';
 import { updateWidgets, widgetPlugin } from './widget.mjs';
+import { jumpToCharacter } from './labelJump.mjs';
 
 export { toggleBlockComment, toggleBlockCommentByLine, toggleComment, toggleLineComment } from '@codemirror/commands';
 
@@ -119,6 +120,14 @@ export function initEditor({ initialCode = '', onChange, onEvaluate, onStop, roo
             preventDefault: true,
             run: () => onStop?.(),
           },
+          {
+            key: 'Alt-w',
+            run: (view) => jumpToCharacter(view, '$', 1),
+          },
+          {
+            key: 'Alt-q',
+            run: (view) => jumpToCharacter(view, '$', -1),
+          },
           /* {
             key: 'Ctrl-Shift-.',
             run: () => (onPanic ? onPanic() : onStop?.()),
@@ -199,8 +208,9 @@ export class StrudelMirror {
       },
       afterEval: (options) => {
         // remember for when highlighting is toggled on
-        this.miniLocations = options.meta?.miniLocations;
-        this.widgets = options.meta?.widgets;
+        this.miniLocations = options.meta?.miniLocations || [];
+        this.widgets = options.meta?.widgets || [];
+
         const sliders = this.widgets.filter((w) => w.type === 'slider');
         updateSliderWidgets(this.editor, sliders);
         const widgets = this.widgets.filter((w) => w.type !== 'slider');
@@ -247,33 +257,6 @@ export class StrudelMirror {
       }
     };
     document.addEventListener('start-repl', this.onStartRepl);
-
-    // Handle global evaluation requests (e.g., from Vim :w)
-    this.onEvaluateRequest = (e) => {
-      try {
-        // Evaluate current editor on repl-evaluate
-        logger('[repl] evaluate via event');
-        this.evaluate();
-        e?.cancelable && e.preventDefault?.();
-      } catch (err) {
-        console.error('Error handling repl-evaluate event', err);
-      }
-    };
-    document.addEventListener('repl-evaluate', this.onEvaluateRequest);
-    document.addEventListener('repl-stop', this.onStopRequest);
-
-    // Toggle comments requested from Vim (gc)
-    this.onToggleComment = (e) => {
-      try {
-        // Honor selections; toggleLineComment handles both selections and
-        // single line
-        toggleLineComment(this.editor);
-        e?.cancelable && e.preventDefault?.();
-      } catch (err) {
-        console.error('Error handling repl-toggle-comment event', err);
-      }
-    };
-    document.addEventListener('repl-toggle-comment', this.onToggleComment);
   }
   draw(haps, time, painters) {
     painters?.forEach((painter) => painter(this.drawContext, time, haps, this.drawTime));
@@ -301,15 +284,6 @@ export class StrudelMirror {
     this.repl.scheduler.stop();
   }
 
-  // Listen for global stop requests (e.g., from Vim :q)
-  onStopRequest = (e) => {
-    try {
-      this.stop();
-      e?.cancelable && e.preventDefault?.();
-    } catch (err) {
-      console.error('Error handling repl-stop event', err);
-    }
-  };
   async toggle() {
     if (this.repl.scheduler.started) {
       this.repl.stop();
@@ -384,19 +358,18 @@ export class StrudelMirror {
       this.setFontSize(value);
     }
   }
-  setCode(code) {
-    const changes = {
-      from: 0,
-      to: this.editor.state.doc.length,
-      insert: code,
-    };
+  replaceCode(code, from, to) {
+    const changes = { from, to, insert: code };
     this.editor.dispatch({ changes });
+  }
+  insertCode(code, position) {
+    this.replaceCode(code, position, position);
+  }
+  setCode(code) {
+    this.replaceCode(code, 0, this.editor.state.doc.length);
   }
   clear() {
     this.onStartRepl && document.removeEventListener('start-repl', this.onStartRepl);
-    this.onEvaluateRequest && document.removeEventListener('repl-evaluate', this.onEvaluateRequest);
-    this.onStopRequest && document.removeEventListener('repl-stop', this.onStopRequest);
-    this.onToggleComment && document.removeEventListener('repl-toggle-comment', this.onToggleComment);
   }
   getCursorLocation() {
     return this.editor.state.selection.main.head;
@@ -425,6 +398,7 @@ function s4() {
 /**
  * Overrides the css of highlighted events. Make sure to use single quotes!
  * @name markcss
+ * @tag visualization
  * @example
  * note("c a f e")
  * .markcss('text-decoration:underline')
